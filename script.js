@@ -159,6 +159,44 @@ function createLocalBackend() {
   };
 }
 
+/* Firebase(Firestore)。家族の誰でも同じデータを読み書きできる共有データベース。
+   GitHub Pagesなど、Claude以外の場所でアプリを開いたときに使われる。 */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDSGP41IVUjfERDN9-4Nnm6_tAJPVeISgg",
+  authDomain: "ouchi-no-kondate.firebaseapp.com",
+  projectId: "ouchi-no-kondate",
+  storageBucket: "ouchi-no-kondate.firebasestorage.app",
+  messagingSenderId: "385279752727",
+  appId: "1:385279752727:web:59068d4c3d5cbd000b3a52",
+};
+
+function createFirebaseBackend(fsDb) {
+  const cols = {
+    inventory: fsDb.collection("inventory"),
+    recipes: fsDb.collection("recipes"),
+    history: fsDb.collection("history"),
+  };
+  return {
+    kind: "firebase",
+    subscribe(name, cb) {
+      return cols[name].onSnapshot(
+        (snap) => cb(snap.docs.map((d) => Object.assign({ id: d.id }, d.data()))),
+        (err) => console.error("firestore " + name + " error", err)
+      );
+    },
+    async add(name, data) {
+      const ref = await cols[name].add(data);
+      return ref.id;
+    },
+    async update(name, id, patch) {
+      await cols[name].doc(id).update(patch);
+    },
+    async remove(name, id) {
+      await cols[name].doc(id).delete();
+    },
+  };
+}
+
 function createDbBackend(db) {
   const cols = {
     inventory: db.collection("inventory"),
@@ -192,19 +230,35 @@ const state = { inventory: [], recipes: [], history: [] };
 let Store = null;
 
 async function initStore() {
-  let db = null;
+  let backend = null;
+
   try {
-    if (window.claude && typeof window.claude.use === "function") {
-      db = await window.claude.use("db");
+    if (window.firebase && FIREBASE_CONFIG.apiKey) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      backend = createFirebaseBackend(firebase.firestore());
     }
   } catch (e) {
-    db = null;
+    backend = null;
   }
 
-  Store = db ? createDbBackend(db) : createLocalBackend();
+  if (!backend) {
+    try {
+      if (window.claude && typeof window.claude.use === "function") {
+        const db = await window.claude.use("db");
+        if (db) backend = createDbBackend(db);
+      }
+    } catch (e) {
+      backend = null;
+    }
+  }
+
+  Store = backend || createLocalBackend();
 
   const badge = document.getElementById("syncBadge");
-  if (Store.kind === "db") {
+  if (Store.kind === "firebase") {
+    badge.textContent = "家族と同期中";
+    badge.classList.add("on");
+  } else if (Store.kind === "db") {
     badge.textContent = "端末間で同期中";
     badge.classList.add("on");
   } else {
@@ -744,6 +798,11 @@ wireHistoryForm();
 wireSuggestionActions();
 initStore();
 
-/* PWA: manifest.json / アイコンによりホーム画面へのアイコン追加には対応。
-   Service Workerの登録はこのホスティング環境では機能しないため行わない
-   （sw.js自体は残してあるが未使用）。 */
+/* PWA: 画面一式を端末に覚えさせておき、ホーム画面のアイコンから
+   本物のアプリのように開けるようにする（GitHub Pagesなど通常のWeb
+   サイトとして開いた場合のみ有効。Claude Artifact内では動作しない）。 */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
