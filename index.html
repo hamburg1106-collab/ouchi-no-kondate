@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>うちの献立</title>
+
+<!-- ここからPWA（ホーム画面に追加してアプリのように使うための設定） -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2e4f37">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="うちの献立">
+<!-- ここまでPWA設定 -->
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Karla:wght@400;500;700;800&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="app-header">
+    <h1>うちの献立</h1>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="today" id="todayLabel"></span>
+      <span class="sync-badge" id="syncBadge">端末内保存</span>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="suggest" class="active">今日の提案</button>
+    <button data-tab="inventory">在庫</button>
+    <button data-tab="recipes">レシピ</button>
+    <button data-tab="history">履歴</button>
+  </nav>
+
+  <!-- 提案 -->
+  <section class="panel active" id="panel-suggest">
+    <p class="section-title">今日のおすすめ献立</p>
+    <p class="section-sub">在庫にある食材で作れる度合いと、最近作ったかどうかから自動で選んでいます。</p>
+    <div class="settings-row">
+      <label for="recentDays">直近</label>
+      <input type="number" id="recentDays" min="0" max="30" value="7">
+      <span>日以内に作った献立は候補から下げる</span>
+    </div>
+    <div id="shoppingPanel" hidden style="margin-bottom:24px;"></div>
+
+    <div class="combo-grid" id="comboGrid"></div>
+
+    <p class="section-title">候補一覧</p>
+    <p class="section-sub">在庫との一致度が高い順に表示しています。</p>
+    <div class="list-plain" id="candidateList"></div>
+  </section>
+
+  <!-- 在庫 -->
+  <section class="panel" id="panel-inventory">
+    <p class="section-title">冷蔵庫の在庫</p>
+    <p class="section-sub">食材を登録しておくと、提案に反映されます。</p>
+    <form class="card" id="inventoryForm" style="margin-bottom:20px;">
+      <div class="form-grid">
+        <label class="field">食材名
+          <input type="text" id="invName" placeholder="例: 豚肉" required>
+        </label>
+        <label class="field">数量（空欄なら常備品扱い）
+          <input type="number" id="invAmount" min="0" step="0.1" placeholder="例: 300">
+        </label>
+        <label class="field">単位
+          <input type="text" id="invUnit" placeholder="例: g / 個 / 本">
+        </label>
+        <label class="field">カテゴリ
+          <select id="invCategory">
+            <option value="野菜">野菜</option>
+            <option value="肉・魚">肉・魚</option>
+            <option value="卵・乳製品">卵・乳製品</option>
+            <option value="豆腐・大豆製品">豆腐・大豆製品</option>
+            <option value="調味料">調味料</option>
+            <option value="穀物・麺">穀物・麺</option>
+            <option value="その他">その他</option>
+          </select>
+        </label>
+        <label class="field">消費期限（任意）
+          <input type="date" id="invExpiry">
+        </label>
+      </div>
+      <button type="submit" class="btn">在庫に追加</button>
+    </form>
+    <div id="inventoryList"></div>
+  </section>
+
+  <!-- レシピ -->
+  <section class="panel" id="panel-recipes">
+    <p class="section-title">レシピ台帳</p>
+    <p class="section-sub">よく作るメニューを登録しておくと提案の候補になります。</p>
+    <div style="margin-bottom:14px;">
+      <button class="btn secondary" id="seedBtn">定番レシピ34品を読み込む</button>
+    </div>
+    <form class="card" id="recipeForm" style="margin-bottom:20px;">
+      <div class="form-grid">
+        <label class="field">料理名
+          <input type="text" id="recName" placeholder="例: 肉じゃが" required>
+        </label>
+        <label class="field">カテゴリ
+          <select id="recCategory">
+            <option value="主菜">主菜</option>
+            <option value="副菜">副菜</option>
+            <option value="汁物">汁物</option>
+            <option value="ご飯もの">ご飯もの</option>
+            <option value="デザート">デザート</option>
+          </select>
+        </label>
+      </div>
+      <label class="field" style="margin-bottom:10px;">必要な食材（1行に1つ。「食材名 数量単位」の形で書くと買い物リストに個数が出ます）
+        <textarea id="recIngredients" placeholder="豚肉 200g&#10;玉ねぎ 1個&#10;しょうゆ" required style="min-height:90px;"></textarea>
+      </label>
+      <label class="field" style="margin-bottom:10px;">メモ（任意）
+        <textarea id="recMemo" placeholder="作り方メモなど"></textarea>
+      </label>
+      <button type="submit" class="btn">レシピを追加</button>
+    </form>
+    <div class="combo-grid" id="recipeList"></div>
+  </section>
+
+  <!-- 履歴 -->
+  <section class="panel" id="panel-history">
+    <p class="section-title">献立履歴</p>
+    <p class="section-sub">「これを作った」を押すと自動で記録されます。手動でも追加できます。</p>
+    <form class="card" id="historyForm" style="margin-bottom:20px;">
+      <div class="form-grid">
+        <label class="field">料理
+          <select id="histRecipe"></select>
+        </label>
+        <label class="field">日付
+          <input type="date" id="histDate">
+        </label>
+      </div>
+      <button type="submit" class="btn secondary">履歴に追加</button>
+    </form>
+    <div class="list-plain" id="historyList"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
